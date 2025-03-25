@@ -1,0 +1,7 @@
+*.pdf
+*.csv
+Data_19_March
+Data_OLD
+ecg_pdfs
+.streamlit
+annotations

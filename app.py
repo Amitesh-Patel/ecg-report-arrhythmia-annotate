@@ -10,6 +10,8 @@ import io
 import zipfile
 from streamlit_pdf_viewer import pdf_viewer
 
+# https://github.com/lfoppiano/streamlit-pdf-viewer
+
 st.set_page_config(page_title="ECG Arrhythmia Annotator", layout="wide")
 
 ARRHYTHMIA_OPTIONS = [
@@ -277,22 +279,12 @@ def main():
 
         current_pdf_idx = st.session_state.get("current_pdf_idx", 0)
 
-        col1, col2, col3, col4 = st.columns([1, 1, 3, 1])
+        col1, col2, col3 = st.columns([3, 1, 1])
 
         with col1:
-            if st.button("⬅️ Previous"):
-                current_pdf_idx = max(0, current_pdf_idx - 1)
-                st.session_state.current_pdf_idx = current_pdf_idx
-
-        with col2:
-            if st.button("Next ➡️"):
-                current_pdf_idx = min(len(pdf_files) - 1, current_pdf_idx + 1)
-                st.session_state.current_pdf_idx = current_pdf_idx
-
-        with col3:
             st.write(f"File {current_pdf_idx + 1} of {len(pdf_files)}")
 
-        with col4:
+        with col2:
             jump_to = st.selectbox("Jump to file", options=pdf_files, index=current_pdf_idx)
             if jump_to != pdf_files[current_pdf_idx]:
                 current_pdf_idx = pdf_files.index(jump_to)
@@ -347,6 +339,18 @@ def main():
         if existing_annotation:
             with st.expander("View Annotation History"):
                 st.json(existing_annotation)
+
+        col_prev, col_next = st.columns([1, 1])
+
+        with col_prev:
+            if st.button("⬅️ Previous"):
+                current_pdf_idx = max(0, current_pdf_idx - 1)
+                st.session_state.current_pdf_idx = current_pdf_idx
+
+        with col_next:
+            if st.button("Next ➡️"):
+                current_pdf_idx = min(len(pdf_files) - 1, current_pdf_idx + 1)
+                st.session_state.current_pdf_idx = current_pdf_idx
 
     with tab2:
         handle_file_upload()

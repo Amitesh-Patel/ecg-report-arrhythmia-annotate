@@ -140,58 +140,116 @@ def handle_file_upload():
                 st.write(f"- {filename}")
 
 
-def get_pdf_files(directory="/home/amiteshpatel/Desktop/Arrythmia_Annotator/Data_19_March"):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        st.info(f"Created directory '{directory}'. Please add ECG PDFs to this folder.")
+def get_pdf_files_from_blob():
+    try:
+        blob_service_client, container_client = initialize_blob_storage()
+
+        if not container_client:
+            st.error("Could not initialize blob storage")
+            return []
+
+        # List all blobs in the container
+        blob_list = container_client.list_blobs()
+
+        # Filter only PDF files
+        pdf_files = [blob.name for blob in blob_list if blob.name.lower().endswith(".pdf")]
+
+        return pdf_files
+    except Exception as e:
+        st.error(f"Error retrieving PDF files: {e}")
         return []
 
-    return [f for f in os.listdir(directory) if f.lower().endswith(".pdf")]
+
+def download_pdf_from_blob(pdf_filename):
+    try:
+        blob_service_client, container_client = initialize_blob_storage()
+
+        if not container_client:
+            st.error("Could not initialize blob storage")
+            return None
+
+        # Get blob client
+        blob_client = container_client.get_blob_client(pdf_filename)
+
+        # Download blob content
+        pdf_bytes = blob_client.download_blob().readall()
+
+        return pdf_bytes
+    except Exception as e:
+        st.error(f"Error downloading PDF {pdf_filename}: {e}")
+        return None
 
 
-def display_pdf(pdf_path):
-    with open(pdf_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode("utf-8")
+def display_pdf_from_blob(pdf_filename):
+    try:
+        # Download PDF bytes from blob storage
+        pdf_bytes = download_pdf_from_blob(pdf_filename)
 
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+        if pdf_bytes:
+            # Convert to base64 for display
+            base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
-    st.markdown(pdf_display, unsafe_allow_html=True)
+            # Create PDF display iframe
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
 
-
-def save_annotation(pdf_filename, selected_arrhythmias, custom_arrhythmia, notes):
-    annotations_dir = "annotations"
-    if not os.path.exists(annotations_dir):
-        os.makedirs(annotations_dir)
-
-    all_arrhythmias = selected_arrhythmias.copy()
-    if custom_arrhythmia:
-        all_arrhythmias.append(custom_arrhythmia)
-
-    annotation_data = {
-        "filename": pdf_filename,
-        "arrhythmias": all_arrhythmias,
-        "notes": notes,
-        "annotated_by": st.session_state.get("doctor_name", "Unknown"),
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }
-
-    json_filename = os.path.splitext(pdf_filename)[0] + ".json"
-    json_path = os.path.join(annotations_dir, json_filename)
-
-    with open(json_path, "w") as f:
-        json.dump(annotation_data, f, indent=4)
-
-    return json_path
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.error(f"Could not retrieve PDF: {pdf_filename}")
+    except Exception as e:
+        st.error(f"Error displaying PDF: {e}")
 
 
-def load_annotation(pdf_filename):
-    json_filename = os.path.splitext(pdf_filename)[0] + ".json"
-    json_path = os.path.join("annotations", json_filename)
+def save_annotation_to_blob(pdf_filename, annotation_data):
+    try:
+        blob_service_client, container_client = initialize_blob_storage()
 
-    if os.path.exists(json_path):
-        with open(json_path, "r") as f:
-            return json.load(f)
-    return None
+        if not container_client:
+            st.error("Could not initialize blob storage")
+            return None
+
+        # Create JSON filename
+        json_filename = os.path.splitext(pdf_filename)[0] + ".json"
+
+        # Get blob client for JSON
+        blob_client = container_client.get_blob_client(json_filename)
+
+        # Convert annotation to JSON
+        json_data = json.dumps(annotation_data, indent=4)
+
+        # Upload JSON to blob
+        blob_client.upload_blob(json_data, overwrite=True)
+
+        return json_filename
+    except Exception as e:
+        st.error(f"Error saving annotation: {e}")
+        return None
+
+
+def load_annotation_from_blob(pdf_filename):
+    try:
+        blob_service_client, container_client = initialize_blob_storage()
+
+        if not container_client:
+            st.error("Could not initialize blob storage")
+            return None
+
+        # Create JSON filename
+        json_filename = os.path.splitext(pdf_filename)[0] + ".json"
+
+        # Check if JSON blob exists
+        blob_client = container_client.get_blob_client(json_filename)
+
+        if blob_client.exists():
+            # Download JSON content
+            json_content = blob_client.download_blob().readall().decode("utf-8")
+
+            # Parse JSON
+            return json.loads(json_content)
+
+        return None
+    except Exception as e:
+        st.error(f"Error loading annotation: {e}")
+        return None
 
 
 def main():
@@ -215,49 +273,40 @@ def main():
                     for idx, file in enumerate(sorted(annotation_files, reverse=True)[:5]):
                         st.write(f"{idx+1}. {file}")
 
-        pdf_files = get_pdf_files()
+        pdf_files = get_pdf_files_from_blob()
 
         if not pdf_files:
             st.warning("No PDF files found. Please add ECG PDFs to the 'ecg_pdfs' folder.")
             return
 
-        if "current_pdf_idx" not in st.session_state:
-            st.session_state.current_pdf_idx = 0
+        current_pdf_idx = st.session_state.get("current_pdf_idx", 0)
 
         col1, col2, col3, col4 = st.columns([1, 1, 3, 1])
 
         with col1:
             if st.button("⬅️ Previous"):
-                st.session_state.current_pdf_idx = max(0, st.session_state.current_pdf_idx - 1)
-                st.rerun()
+                current_pdf_idx = max(0, current_pdf_idx - 1)
+                st.session_state.current_pdf_idx = current_pdf_idx
 
         with col2:
             if st.button("Next ➡️"):
-                st.session_state.current_pdf_idx = min(
-                    len(pdf_files) - 1, st.session_state.current_pdf_idx + 1
-                )
-                st.rerun()
+                current_pdf_idx = min(len(pdf_files) - 1, current_pdf_idx + 1)
+                st.session_state.current_pdf_idx = current_pdf_idx
 
         with col3:
-            st.write(f"File {st.session_state.current_pdf_idx + 1} of {len(pdf_files)}")
+            st.write(f"File {current_pdf_idx + 1} of {len(pdf_files)}")
 
         with col4:
-            jump_to = st.selectbox(
-                "Jump to file", options=pdf_files, index=st.session_state.current_pdf_idx
-            )
-            if jump_to != pdf_files[st.session_state.current_pdf_idx]:
-                st.session_state.current_pdf_idx = pdf_files.index(jump_to)
-                st.rerun()
+            jump_to = st.selectbox("Jump to file", options=pdf_files, index=current_pdf_idx)
+            if jump_to != pdf_files[current_pdf_idx]:
+                current_pdf_idx = pdf_files.index(jump_to)
+                st.session_state.current_pdf_idx = current_pdf_idx
 
-        current_pdf = pdf_files[st.session_state.current_pdf_idx]
-        current_pdf_path = os.path.join(
-            "/home/amiteshpatel/Desktop/Arrythmia_Annotator/Data_19_March", current_pdf
-        )
-
+        current_pdf = pdf_files[current_pdf_idx]
         st.header(f"ECG Report: {current_pdf}")
-        display_pdf(current_pdf_path)
+        display_pdf_from_blob(current_pdf)
 
-        existing_annotation = load_annotation(current_pdf)
+        existing_annotation = load_annotation_from_blob(current_pdf)
 
         st.header("Arrhythmia Annotation")
 
@@ -286,9 +335,17 @@ def main():
             elif not (selected_arrhythmias or custom_arrhythmia):
                 st.error("Please select at least one arrhythmia or enter a custom one.")
             else:
-                json_path = save_annotation(
-                    current_pdf, selected_arrhythmias, custom_arrhythmia, notes
-                )
+                all_arrhythmias = selected_arrhythmias.copy()
+                if custom_arrhythmia:
+                    all_arrhythmias.append(custom_arrhythmia)
+                annotation_data = {
+                    "filename": current_pdf,
+                    "arrhythmias": all_arrhythmias,
+                    "notes": notes,
+                    "annotated_by": st.session_state.get("doctor_name", "Unknown"),
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                json_path = save_annotation_to_blob(current_pdf, annotation_data)
                 st.success(f"Annotation saved successfully to {json_path}")
 
         if existing_annotation:

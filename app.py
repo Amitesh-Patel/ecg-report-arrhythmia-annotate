@@ -8,6 +8,7 @@ from PyPDF2 import PdfReader
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 import io
 import zipfile
+from streamlit_pdf_viewer import pdf_viewer
 
 st.set_page_config(page_title="ECG Arrhythmia Annotator", layout="wide")
 
@@ -186,13 +187,8 @@ def display_pdf_from_blob(pdf_filename):
         pdf_bytes = download_pdf_from_blob(pdf_filename)
 
         if pdf_bytes:
-            # Convert to base64 for display
-            base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-
-            # Create PDF display iframe
-            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-
-            st.markdown(pdf_display, unsafe_allow_html=True)
+            # Use streamlit-pdf-viewer to display PDF
+            pdf_viewer(input=pdf_bytes, width=1400)
         else:
             st.error(f"Could not retrieve PDF: {pdf_filename}")
     except Exception as e:

@@ -1,3 +1,4 @@
 azure-storage-blob
 streamlit
 PyPDF2
+streamlit-pdf-viewer
